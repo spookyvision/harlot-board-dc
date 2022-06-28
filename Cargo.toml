@@ -1,0 +1,33 @@
+[package]
+name = "harlot-board"
+version = "0.1.0"
+authors = ["ace"]
+edition = "2018"
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true # Symbols are nice and they don't increase the size on Flash
+opt-level = "z"
+
+[features]
+pio = ["esp-idf-sys/pio"]
+
+[dependencies]
+esp-idf-sys = { version = "0.31.6", features = ["binstart"] }
+esp-idf-svc = { version="*", features = ["experimental", "alloc"] }
+esp-idf-hal = "*"
+embedded-svc = "*"
+
+log = "0.4"
+anyhow = "1"
+toml-cfg = "0.1"
+color-mixer = {path="/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/color-mixer/"}
+bytemuck = {version = "1", features=["derive"]}
+static_assertions = "1.1.0"
+
+[build-dependencies]
+embuild = "0.29"
+anyhow = "1"
