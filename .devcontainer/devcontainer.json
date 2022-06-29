@@ -43,6 +43,8 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/esp/harlot_board_dc,type=bind,consistency=cached",
   "workspaceFolder": "/home/esp/harlot_board_dc",
   "mounts": [
-    "source=C:/,target=/mnt/c,type=bind,consistency=cached"
+    "source=C:/,target=/mnt/c,type=bind,consistency=cached",
+    "source=C:/Users/ace/Documents/GitHub/color-mixer-ws,target=/home/esp/color-mixer-ws,type=bind,consistency=cached",
+    "source=C:/Users,target=/Users,type=bind,consistency=cached"
   ]
 }
