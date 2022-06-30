@@ -62,8 +62,10 @@ pub fn wifi(
             ..Default::default()
         },
         AccessPointConfiguration {
-            ssid: "aptest".into(),
+            ssid: "verboten".into(),
             channel: channel.unwrap_or(1),
+            password: "JAWOLL!!!".into(),
+            auth_method,
             ..Default::default()
         },
     ))?;

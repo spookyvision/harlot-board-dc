@@ -15,6 +15,7 @@ mod wifi;
 use apa_spi::{Apa, Pixel};
 use color_mixer::strip::{Control, Segment, Srgb8, State};
 use embedded_svc::io::{Io, Read};
+use esp_idf_svc::nvs_storage::EspNvsStorage;
 // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use esp_idf_sys as _;
 use indexmap::IndexMap;
@@ -48,15 +49,6 @@ pub struct Config {
     wifi_psk: &'static str,
 }
 
-/// Entry point to our application.
-///
-/// It sets up a Wi-Fi connection to the Access Point given in the
-/// configuration, then blinks the RGB LED green/blue.
-///
-/// If the LED goes solid red, then it was unable to connect to your Wi-Fi
-/// network.
-///
-
 const FS_NAMESPACE: &'static str = "fs";
 
 struct StdReader<R>(R);
@@ -74,8 +66,8 @@ fn httpd(
     mutex: Arc<(Mutex<Option<u32>>, Condvar)>,
     segments: Arc<Mutex<IndexMap<String, Segment>>>,
     sys_start: Instant,
+    mut storage: EspNvsStorage,
 ) -> anyhow::Result<Server> {
-
     use embedded_svc::httpd::{registry::Registry, Body, Handler, Method};
     let read_data = segments.clone();
     let write_data = segments.clone();
@@ -92,41 +84,43 @@ fn httpd(
 
         Response::new(200)
             .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
             .body(ser.into())
             .into()
     };
 
-    let write_f = move |mut req: Request| {
+    let storage = Arc::new(Mutex::new(storage));
+
+    let write_f = move |req: Request| {
+        let mut req = req;
         let data = req.as_bytes()?;
         let de: IndexMap<String, Segment> = serde_json::from_slice(&data)?;
         let mut dat = write_data.lock().unwrap();
         *dat = de;
+        drop(dat);
+        storage.lock().unwrap().put_raw(SEGMENTS_FILE, &data);
 
         Ok("ok".into())
     };
-    
+
     fn resp(data: &'static [u8], content_type: &str) -> Result<Response, anyhow::Error> {
         let response = Response::new(200)
-            .header("Content-Encoding", "gzip").header("Content-Type", content_type);
+            .header("Content-Encoding", "gzip")
+            .header("Content-Type", content_type)
+            .header("Access-Control-Allow-Origin", "*");
         let body = Body::Read(None, Box::new(data));
         response.body(body).into()
     }
 
-    let server = ServerRegistry::new()
-//. handler (Handler :: new ("/.gitkeep" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/.gitkeep.gz") ; resp (data . as_slice () , "application/octet-stream") })) ?. handler (Handler :: new ("/assets/dioxus/color-mixer.js" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/color-mixer.js.gz") ; resp (data . as_slice () , "text/javascript") })) ?. handler (Handler :: new ("/assets/dioxus/color-mixer_bg.wasm" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/color-mixer_bg.wasm.gz") ; resp (data . as_slice () , "application/wasm") })) ?. handler (Handler :: new ("/assets/dioxus/snippets/dioxus-interpreter-js-459fb15b86d869f7/src/interpreter.js" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/snippets/dioxus-interpreter-js-459fb15b86d869f7/src/interpreter.js.gz") ; resp (data . as_slice () , "text/javascript") })) ?
-. handler (Handler :: new ("/assets/dioxus/color-mixer.js" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/color-mixer.js.gz") ; resp (data . as_slice () , "text/javascript") })) ?. handler (Handler :: new ("/assets/dioxus/color-mixer_bg.wasm" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/color-mixer_bg.wasm.gz") ; resp (data . as_slice () , "application/wasm") })) ?. handler (Handler :: new ("/assets/dioxus/snippets/dioxus-interpreter-js-459fb15b86d869f7/src/interpreter.js" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/assets/dioxus/snippets/dioxus-interpreter-js-459fb15b86d869f7/src/interpreter.js.gz") ; resp (data . as_slice () , "text/javascript") })) ?
-
-
+    let mut server = include!("../web_includes.rs");
+    server = server
+        //.handler (Handler :: new ("/" , Method :: Get , | _ | { let data = include_bytes ! ("/mnt/c/Users/ace/Documents/GitHub/color-mixer-ws/mixer-dioxus/dist/index.html.gz") ; resp (data . as_slice () , "text/html") })) ?
         .handler(Handler::new("/now", Method::Get, now_f))?
         .handler(Handler::new("/data", Method::Get, read_f))?
         .handler(Handler::new("/data", Method::Post, write_f))?;
 
-    #[cfg(esp32s2)]
-    let server = httpd_ulp_endpoints(server, mutex)?;
-
     server.start(&Default::default())
 }
-
 
 #[cfg(feature = "experimental")]
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
@@ -193,6 +187,7 @@ fn httpd(
     Ok(server)
 }
 
+const SEGMENTS_FILE: &'static str = "segments.json";
 fn main() -> anyhow::Result<()> {
     esp_idf_sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -208,26 +203,27 @@ fn main() -> anyhow::Result<()> {
     log::warn!("Hello, log!");
 
     let nvs = Arc::new(esp_idf_svc::nvs::EspDefaultNvs::new()?);
-    let mut storage =
-        esp_idf_svc::nvs_storage::EspNvsStorage::new_default(nvs.clone(), FS_NAMESPACE, true)?;
+    let storage = EspNvsStorage::new_default(nvs.clone(), FS_NAMESPACE, true)?;
 
-    let file_name = "segments.json";
-
-    let mut segments = match storage.len(file_name) {
-        Ok(Some(len)) => {
-            let mut buf = vec![];
-            buf.resize(len, 0u8);
-            if let Some((loaded_buf, _)) = storage.get_raw(file_name, &mut buf)? {
-                let de: IndexMap<String, Segment> = serde_json::from_slice(loaded_buf)?;
-                de
-            } else {
-                IndexMap::new()
-            }
-        }
-        _ => IndexMap::new(),
+    let load_segments = || {
+        let len = storage.len(SEGMENTS_FILE)?.unwrap_or_default();
+        let mut buf = vec![];
+        buf.resize(len, 0u8);
+        let (loaded_buf, _) = storage.get_raw(SEGMENTS_FILE, &mut buf)?.unwrap_or_default();
+        let de: IndexMap<String, Segment> = serde_json::from_slice(loaded_buf)?;
+        Ok(de)
     };
 
+    let res: Result<_, anyhow::Error> = load_segments();
+
+    if let Err(e) = &res {
+        log::error!("could not load data: {:?}", e);
+    }
+    let mut segments = res.unwrap_or_default();
+
+    let brightness = 10;
     if segments.is_empty() {
+        let chill_fac = 100;
         let some_segs = [
             Segment::new(
                 1,
@@ -235,7 +231,8 @@ fn main() -> anyhow::Result<()> {
                 Srgb8::new(255, 150, 0),
                 Srgb8::new(255, 10, 120),
                 0,
-                100,
+                chill_fac,
+                brightness,
             ),
             Segment::new(
                 1,
@@ -243,7 +240,8 @@ fn main() -> anyhow::Result<()> {
                 Srgb8::new(166, 0, 255),
                 Srgb8::new(2, 192, 192),
                 1,
-                100,
+                chill_fac,
+                brightness,
             ),
             Segment::new(
                 1,
@@ -251,7 +249,8 @@ fn main() -> anyhow::Result<()> {
                 Srgb8::new(20, 200, 141),
                 Srgb8::new(200, 176, 20),
                 2,
-                100,
+                chill_fac,
+                brightness,
             ),
             Segment::new(
                 1,
@@ -259,7 +258,8 @@ fn main() -> anyhow::Result<()> {
                 Srgb8::new(200, 20, 30),
                 Srgb8::new(200, 200, 10),
                 3,
-                100,
+                chill_fac,
+                brightness,
             ),
         ];
 
@@ -267,7 +267,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     let segments = Arc::new(Mutex::new(segments));
-
 
     log::info!("starting wifi");
     let netif_stack = Arc::new(EspNetifStack::new()?);
@@ -285,49 +284,19 @@ fn main() -> anyhow::Result<()> {
 
     let mutex = Arc::new((Mutex::new(None), Condvar::new()));
 
-    let httpd = httpd(mutex.clone(), segments.clone(), sys_start)?;
+    let httpd = httpd(mutex.clone(), segments.clone(), sys_start, storage)?;
     let mut apa_config = apa_spi::Config::default();
     apa_config.length = 512;
     const LEN: usize = 32;
     let mut apa: Apa = Apa::new(apa_config);
     let moar_chill = 1000;
     let state = State::new(
-        [
-            Segment::new(
-                144,
-                false,
-                Srgb8::new(255, 150, 0),
-                Srgb8::new(255, 30, 20),
-                0,
-                moar_chill,
-            ),
-            Segment::new(
-                60,
-                false,
-                Srgb8::new(166, 0, 255),
-                Srgb8::new(2, 192, 192),
-                1,
-                moar_chill,
-            ),
-            Segment::new(
-                30,
-                false,
-                Srgb8::new(20, 200, 141),
-                Srgb8::new(200, 176, 20),
-                1,
-                moar_chill,
-            ),
-            Segment::new(
-                30,
-                false,
-                Srgb8::new(200, 20, 30),
-                Srgb8::new(200, 200, 10),
-                1,
-                moar_chill,
-            ),
-        ]
-        .iter()
-        .cloned(),
+        segments
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, seg)| seg)
+            .cloned(),
     );
 
     loop {
@@ -335,16 +304,18 @@ fn main() -> anyhow::Result<()> {
 
         let log_f = |s: String| log::warn!("{s}");
         let log_f = |_s| {};
+        let segments = segments.lock().unwrap().clone();
 
-        for (idx, (_id, seg)) in state.iter().enumerate() {
+        for (_id, seg) in segments {
             let color = seg.color_at(now);
-            let segment_color = Pixel::new(color.red, color.green, color.blue, 40);
+            let segment_color = Pixel::new(color.red, color.green, color.blue, seg.brightness());
             for i in led_start..led_start + seg.length() {
                 apa.set_pixel(i, segment_color, log_f);
             }
             led_start += seg.length();
             apa.flush();
         }
+
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         let dt = Instant::now().duration_since(sys_start);
