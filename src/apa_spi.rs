@@ -167,7 +167,7 @@ impl Default for Config {
             length: 1,
             data_pin: 7,
             clock_pin: 6,
-            clock_speed: 2_000_000,
+            clock_speed: 10_000_000,
             transfer_size: 0, // TODO make configurable
             spi_host: spi_host_device_t_SPI2_HOST,
             queue_size: 1,

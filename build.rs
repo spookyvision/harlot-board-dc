@@ -3,7 +3,7 @@ use std::{env, process::Command};
 // Necessary because of this issue: https://github.com/rust-lang/cargo/issues/9641
 fn main() -> anyhow::Result<()> {
     let out_dir = env::var("OUT_DIR").unwrap();
-    let out_file = out_dir + "/../../web_includes.rs";
+    // let out_file = out_dir + "/../../web_includes.rs";
     // WSL paths are too bork, giving up
     let out_file = "web_includes.rs";
 
