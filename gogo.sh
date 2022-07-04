@@ -8,4 +8,5 @@ pushd ../color-mixer-ws/mixer-dioxus/
 HARLOT_BOARD="http://192.168.71.1/" trunk build
 cp public/style.css dist
 popd
-cargo espflash --release --monitor --speed 800000
+#cargo espflash --release --monitor --speed 800000
+cargo espflash --monitor --release --speed 800000 /dev/cu.SLAB_USBtoUART

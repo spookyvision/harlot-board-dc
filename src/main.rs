@@ -273,9 +273,14 @@ fn main() -> anyhow::Result<()> {
     let sys_loop_stack = Arc::new(EspSysLoopStack::new()?);
 
     log::info!("starting wifi harder...");
-    let _wifi = wifi::wifi(
-        app_config.wifi_ssid,
-        app_config.wifi_psk,
+    // let _wifi = wifi::wifi(
+    //     app_config.wifi_ssid,
+    //     app_config.wifi_psk,
+    //     netif_stack.clone(),
+    //     sys_loop_stack.clone(),
+    //     nvs.clone(),
+    // )?;
+    let _wifi = wifi::wifi_ap_only(
         netif_stack.clone(),
         sys_loop_stack.clone(),
         nvs.clone(),

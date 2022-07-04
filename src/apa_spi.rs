@@ -138,6 +138,10 @@ impl HeapData {
     }
 
     pub fn set_pixel(&mut self, idx: usize, pixel: Pixel, log: impl Fn(String) -> ()) {
+        if idx >= self.length {
+            log::error!("NO! {idx}");
+            return;
+        }
         let one_px = size_of::<Pixel>();
         let offset = 4 + idx * one_px;
         let logme = format!("{offset} {one_px}");
@@ -242,7 +246,16 @@ impl Apa {
     pub fn flush(&self) {
         let mut tx = spi_transaction_t::default();
 
-        tx.length = (8 * self.data.data().len()) as u32;
+        let txl = (8 * self.data.data().len());
+        // if txl > 2047 {
+        //     log::error!("the tx is too damn high: {txl}");
+        //     return;
+        //  }
+        //  else {
+        //     log::info!("TXL {txl}");
+        //  }
+        tx.length = txl as u32;
+        
         let tx_buffer = spi_transaction_t__bindgen_ty_1 {
             tx_buffer: self.data.as_ptr() as _,
         };

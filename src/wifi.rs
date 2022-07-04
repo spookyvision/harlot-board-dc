@@ -10,7 +10,32 @@ use embedded_svc::{wifi::{
 use esp_idf_svc::{
     netif::EspNetifStack, nvs::EspDefaultNvs, sysloop::EspSysLoopStack, wifi::EspWifi,
 };
-use log::info;
+use log::{info, warn};
+
+pub fn wifi_ap_only(
+    netif_stack: Arc<EspNetifStack>,
+    sys_loop_stack: Arc<EspSysLoopStack>,
+    default_nvs: Arc<EspDefaultNvs>,
+) -> anyhow::Result<Box<EspWifi>> {
+    let mut auth_method = AuthMethod::WPA2Personal;
+    let mut wifi = Box::new(EspWifi::new(netif_stack, sys_loop_stack, default_nvs)?);
+    info!("setting Wifi configuration");
+    let hostname = Some(heapless::String::from("harharlot"));
+    let ip_conf = Some(ipv4::ClientConfiguration::DHCP(DHCPClientSettings{hostname}));
+    wifi.set_configuration(&wifi::Configuration::AccessPoint (
+        AccessPointConfiguration {
+            ssid: "verboten".into(),
+            password: "JAWOLL!!!".into(),
+            auth_method,
+            ..Default::default()
+        },
+    ))?;
+    
+    let status = wifi.get_status();
+
+    info!("Wifi: {:?}", status);
+    Ok(wifi)
+}
 
 pub fn wifi(
     ssid: &str,
@@ -70,7 +95,7 @@ pub fn wifi(
         },
     ))?;
     
-    info!("Wifi: waiting to settle");
+    info!("Wifi: waiting to s3ttl3");
 
     wifi.wait_status_with_timeout(Duration::from_secs(20), |status| !status.is_transitional())
         .map_err(|e| anyhow::anyhow!("Unexpected Wifi status: {:?}", e))?;
@@ -85,7 +110,8 @@ pub fn wifi(
     {
         info!("Wifi connected!");
     } else {
-        bail!("Unexpected Wifi status: {:?}", status);
+        // bail!("Unexpected Wifi status: {:?}", status);
+        warn!("Unexpected Wifi status: {:?}", status);
     }
 
     Ok(wifi)
